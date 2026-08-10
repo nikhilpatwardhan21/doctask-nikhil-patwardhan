@@ -34,6 +34,7 @@ class HumanApprovalItem(TypedDict):
     item_type: str  # e.g., "RULE_VIOLATION", "FACT_CONFLICT", "DOCUMENT_UPDATE"
     description: str
     proposed_action: str
+    source_citation: Optional[str]
     status: str  # "PENDING", "APPROVED", "REJECTED"
     reviewer_notes: Optional[str]
 

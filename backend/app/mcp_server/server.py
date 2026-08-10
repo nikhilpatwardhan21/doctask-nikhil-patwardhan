@@ -3,8 +3,12 @@ import logging
 from typing import Dict, Any, List
 from mcp.server import MCPServer
 
-from backend.app.core.db import get_checkpointer
-from backend.app.agents.graph import build_document_workflow
+try:
+    from app.core.db import get_checkpointer
+    from app.agents.graph import build_document_workflow
+except ModuleNotFoundError:
+    from backend.app.core.db import get_checkpointer
+    from backend.app.agents.graph import build_document_workflow
 from langgraph.types import Command
 
 logger = logging.getLogger(__name__)

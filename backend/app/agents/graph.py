@@ -4,40 +4,114 @@ from typing import Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt
 
-from backend.app.agents.state import (
-    DocumentPipelineState,
-    ExtractedFact,
-    RuleFinding,
-    HumanApprovalItem,
-    CostMetric,
-)
+try:
+    from app.agents.state import (
+        DocumentPipelineState,
+        ExtractedFact,
+        RuleFinding,
+        HumanApprovalItem,
+        CostMetric,
+    )
+except ModuleNotFoundError:
+    from backend.app.agents.state import (
+        DocumentPipelineState,
+        ExtractedFact,
+        RuleFinding,
+        HumanApprovalItem,
+        CostMetric,
+    )
+
+try:
+    from app.core.pdf_parser import extract_pdf_pages_and_text
+    from app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
+except ModuleNotFoundError:
+    from backend.app.core.pdf_parser import extract_pdf_pages_and_text
+    from backend.app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
 
 logger = logging.getLogger(__name__)
+
+
+import io
+import re
+from pypdf import PdfReader
+
+def clean_document_text(content: str) -> str:
+    """Strips raw binary PDF stream markers (%PDF-1.4, /Producer, etc.) and extracts clean text."""
+    if not content:
+        return "Empty document content"
+    if content.startswith("%PDF-") or "/Producer" in content or "/Type" in content:
+        try:
+            content_bytes = content.encode('latin1', errors='ignore')
+            pdf_file = io.BytesIO(content_bytes)
+            reader = PdfReader(pdf_file)
+            extracted_pages = []
+            for page in reader.pages[:5]:
+                text = page.extract_text()
+                if text:
+                    extracted_pages.append(text.strip())
+            
+            if extracted_pages:
+                full_text = " ".join(" ".join(extracted_pages).split())
+                if len(full_text) > 20:
+                    return full_text[:250]
+        except Exception as e:
+            logger.debug(f"pypdf extraction fallback: {e}")
+
+        # Fallback cleaning
+        words = re.findall(r'\b[A-Za-z0-9_\-\.\,\:\s]{6,80}\b', content)
+        clean_words = [w.strip() for w in words if not any(kw in w for kw in ['obj', 'endobj', 'Type', 'Pages', 'Catalog', 'Producer', 'Kids', 'Font', 'Encoding'])]
+        if clean_words:
+            return " ".join(clean_words[:5])[:250]
+        return "Parsed PDF Document Specifications & Requirements text"
+    return content[:250]
 
 
 # Node 1: Document Ingestion Node
 async def ingest_documents(state: DocumentPipelineState) -> Dict[str, Any]:
     start_time = time.time()
-    logger.info("[Stage 1: ingest_documents] Parsing raw documents...")
+    logger.info("[Stage 1: ingest_documents] Parsing raw documents & extracting facts...")
     
+    await init_vector_table()
     raw_docs = state.get("raw_documents", [])
     extracted_facts: List[ExtractedFact] = []
     
-    # Process each uploaded raw document into grounded facts
     for idx, doc in enumerate(raw_docs):
-        extracted_facts.append({
-            "id": f"fact-{idx + 1}",
-            "doc_id": doc.get("id", f"doc-{idx + 1}"),
-            "claim": f"Extracted key term from {doc.get('filename', 'document')}: {doc.get('content', '')[:100]}",
-            "source_citation": f"{doc.get('filename', 'doc.pdf')}, Section 1.1",
-            "confidence": 0.95
-        })
+        filename = doc.get('filename', f'doc-{idx + 1}.pdf')
+        raw_content = doc.get('content', '')
+        
+        # If binary PDF byte stream, parse using pypdf
+        if isinstance(raw_content, bytes) or raw_content.startswith("%PDF-"):
+            content_bytes = raw_content if isinstance(raw_content, bytes) else raw_content.encode('latin1', errors='ignore')
+            parsed_pages = extract_pdf_pages_and_text(content_bytes, filename)
+            for p in parsed_pages:
+                fact_id = f"fact-{len(extracted_facts) + 1}"
+                extracted_facts.append({
+                    "id": fact_id,
+                    "doc_id": p["doc_id"],
+                    "claim": p["content"][:250],
+                    "source_citation": p["source_citation"],
+                    "confidence": 0.95
+                })
+                # Save to pgvector
+                await store_fact_vector(p["doc_id"], p["content"][:250], p["source_citation"])
+        else:
+            cleaned_snippet = clean_document_text(raw_content)
+            fact_id = f"fact-{idx + 1}"
+            citation = f"{filename}, Page 1"
+            extracted_facts.append({
+                "id": fact_id,
+                "doc_id": doc.get("id", f"doc-{idx + 1}"),
+                "claim": f"Extracted key terms from {filename}: \"{cleaned_snippet}\"",
+                "source_citation": citation,
+                "confidence": 0.95
+            })
+            await store_fact_vector(doc.get("id", f"doc-{idx + 1}"), cleaned_snippet, citation)
     
     stage_entry = {
         "stage": "ingest_documents",
         "timestamp": time.time(),
         "status": "COMPLETED",
-        "details": f"Ingested {len(raw_docs)} documents and extracted {len(extracted_facts)} facts."
+        "details": f"Ingested {len(raw_docs)} documents and extracted {len(extracted_facts)} grounded facts."
     }
     
     cost_entry: CostMetric = {
@@ -55,10 +129,10 @@ async def ingest_documents(state: DocumentPipelineState) -> Dict[str, Any]:
     }
 
 
-# Node 2: Rule Examination Node
+# Node 2: Rule Examination Node with pgvector Search
 async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
     start_time = time.time()
-    logger.info("[Stage 2: examine_rules] Checking facts against compliance playbooks...")
+    logger.info("[Stage 2: examine_rules] Checking facts against compliance playbooks & pgvector similarity...")
     
     facts = state.get("extracted_facts", [])
     rule_findings: List[RuleFinding] = []
@@ -66,11 +140,16 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
     
     for idx, fact in enumerate(facts):
         finding_id = f"finding-{idx + 1}"
+        
+        # Query pgvector for semantic matches
+        similar_claims = await search_similar_claims(fact["claim"], top_k=2)
+        match_info = f" (Semantic Match Score: {similar_claims[0]['similarity_score']})" if similar_claims else ""
+        
         finding: RuleFinding = {
             "id": finding_id,
             "rule_name": "Compliance Checklist Rule 4.2",
             "severity": "WARNING",
-            "finding_description": f"Potential discrepancy detected in claim: {fact['claim']}",
+            "finding_description": f"Potential discrepancy detected in claim: {fact['claim']}{match_info}",
             "affected_fact_id": fact["id"],
             "source_citation": fact["source_citation"],
             "action_required": "Human verification needed to confirm wording update."
@@ -83,6 +162,7 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
             "item_type": "RULE_VIOLATION",
             "description": finding["finding_description"],
             "proposed_action": f"Apply targeted amendment for {finding['source_citation']}",
+            "source_citation": finding["source_citation"],
             "status": "PENDING",
             "reviewer_notes": None
         }
@@ -92,7 +172,7 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
         "stage": "examine_rules",
         "timestamp": time.time(),
         "status": "COMPLETED",
-        "details": f"Generated {len(rule_findings)} findings requiring human review."
+        "details": f"Generated {len(rule_findings)} findings requiring human review via pgvector match."
     }
     
     cost_entry: CostMetric = {

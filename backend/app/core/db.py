@@ -2,6 +2,9 @@ import os
 import sys
 import asyncio
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 if sys.platform == "win32":
     try:
@@ -11,7 +14,10 @@ if sys.platform == "win32":
 
 from typing import Optional, Any
 from langgraph.checkpoint.memory import MemorySaver
-from backend.app.core.config import settings
+try:
+    from app.core.config import settings
+except ModuleNotFoundError:
+    from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

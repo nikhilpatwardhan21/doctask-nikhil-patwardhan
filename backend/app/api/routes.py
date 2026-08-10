@@ -2,14 +2,24 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any
 
-from backend.app.schemas.documents import (
-    IngestDocumentRequest,
-    BatchApprovalRequest,
-    PendingReviewsResponse,
-    PipelineStatusResponse,
-)
-from backend.app.agents.graph import build_document_workflow
-from backend.app.core.db import get_checkpointer
+try:
+    from app.schemas.documents import (
+        IngestDocumentRequest,
+        BatchApprovalRequest,
+        PendingReviewsResponse,
+        PipelineStatusResponse,
+    )
+    from app.agents.graph import build_document_workflow
+    from app.core.db import get_checkpointer
+except ModuleNotFoundError:
+    from backend.app.schemas.documents import (
+        IngestDocumentRequest,
+        BatchApprovalRequest,
+        PendingReviewsResponse,
+        PipelineStatusResponse,
+    )
+    from backend.app.agents.graph import build_document_workflow
+    from backend.app.core.db import get_checkpointer
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -161,3 +171,25 @@ async def get_run_status(thread_id: str):
         stage_history=val.get("stage_history", []),
         cost_metrics=val.get("cost_metrics", [])
     )
+
+
+@router.get("/vector-search", response_model=Dict[str, Any])
+async def search_vector_embeddings(query: str = Query(..., description="Semantic search query text"), top_k: int = 3):
+    """
+    Exposes direct pgvector cosine similarity search (<=>) over stored document embeddings.
+    """
+    try:
+        try:
+            from app.core.vector_store import search_similar_claims
+        except ModuleNotFoundError:
+            from backend.app.core.vector_store import search_similar_claims
+            
+        results = await search_similar_claims(query_text=query, top_k=top_k)
+        return {
+            "query": query,
+            "total_matches": len(results),
+            "results": results
+        }
+    except Exception as e:
+        logger.exception("Error executing pgvector similarity search.")
+        raise HTTPException(status_code=500, detail=str(e))

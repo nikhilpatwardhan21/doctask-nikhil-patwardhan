@@ -1,4 +1,4 @@
-version: '3.8'
+name: superdocs
 
 services:
   db:
@@ -6,15 +6,16 @@ services:
     container_name: doctask_postgres
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-doctask_db}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: doctask_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/app/core/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-doctask_db}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d doctask_db"]
       interval: 5s
       timeout: 5s
       retries: 5

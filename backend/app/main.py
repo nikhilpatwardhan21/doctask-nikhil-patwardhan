@@ -8,10 +8,16 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.core.config import settings
-from backend.app.core.db import init_db_and_checkpointer, close_db_pool
-from backend.app.api.routes import router as api_router
-from backend.app.mcp_server.server import mcp_server
+try:
+    from app.core.config import settings
+    from app.core.db import init_db_and_checkpointer, close_db_pool
+    from app.api.routes import router as api_router
+    from app.mcp_server.server import mcp_server
+except ModuleNotFoundError:
+    from backend.app.core.config import settings
+    from backend.app.core.db import init_db_and_checkpointer, close_db_pool
+    from backend.app.api.routes import router as api_router
+    from backend.app.mcp_server.server import mcp_server
 
 # Configure structured logging
 logging.basicConfig(
