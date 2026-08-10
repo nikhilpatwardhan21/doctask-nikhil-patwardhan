@@ -76,7 +76,7 @@ export default function ReviewDashboard() {
       reader.onload = (event) => {
         let raw = event.target.result || '';
         let cleanedContent = raw;
-        if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || raw.startswith('%PDF-')) {
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || raw.startsWith('%PDF-')) {
           cleanedContent = `Document excerpt from ${file.name}: Compliance requirements, technical specifications, and system architecture details.`;
         }
         const docObj = {
@@ -218,6 +218,30 @@ export default function ReviewDashboard() {
       setMessage(`Error submitting approvals: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Export Grounded Deliverable Report as Markdown file download
+  const handleExportDeliverable = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/runs/${threadId}/export`);
+      if (res.ok) {
+        const data = await res.json();
+        const blob = new Blob([data.report_markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `Deliverable_Report_${threadId}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setMessage(`Successfully downloaded grounded deliverable report: ${data.filename}`);
+      } else {
+        setMessage('Could not generate report for current thread.');
+      }
+    } catch (err) {
+      setMessage(`Error exporting report: ${err.message}`);
     }
   };
 
@@ -373,6 +397,11 @@ export default function ReviewDashboard() {
         <button className="btn btn-reject" onClick={fetchStatus}>
           🔄 Refresh Pipeline State
         </button>
+        {runStatus && (
+          <button className="btn btn-approve" onClick={handleExportDeliverable} style={{ background: 'linear-gradient(135deg, #7f00ff, #00f2fe)' }}>
+            📥 Download Grounded Report (.md)
+          </button>
+        )}
         {message && <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: '500' }}>{message}</span>}
       </div>
 
@@ -452,16 +481,61 @@ export default function ReviewDashboard() {
         </div>
       )}
 
-      {/* Stage Execution History & Cost Tracking */}
+      {/* Stage Execution History & Cost Analytics */}
       {runStatus && (
         <div style={{ marginTop: '3rem', background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-          <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Execution History & Cost Metrics</h3>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            <div>Extracted Facts: {runStatus.extracted_facts_count}</div>
-            <div>Rule Findings: {runStatus.rule_findings_count}</div>
-            <div>Approved Items: {runStatus.approved_count}</div>
-            <div>Rejected Items: {runStatus.rejected_count}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1.1rem', color: '#fff' }}>📊 Stage Execution History & Cost Analytics (Behavior #10)</h3>
+            <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)' }}>
+              Pipeline Status: {runStatus.pipeline_completed ? '✓ COMPLETED' : '● PAUSED'}
+            </span>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>EXTRACTED FACTS</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>{runStatus.extracted_facts_count}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RULE FINDINGS</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-rose)' }}>{runStatus.rule_findings_count}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>APPROVED ITEMS</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-emerald)' }}>{runStatus.approved_count}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>DISMISSED ITEMS</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#94a3b8' }}>{runStatus.rejected_count}</div>
+            </div>
+          </div>
+
+          {/* Stage Cost Breakdown Table */}
+          {runStatus.cost_metrics && runStatus.cost_metrics.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: '#cbd5e1' }}>Stage Breakdown (Latency & Tokens)</h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '0.5rem' }}>STAGE</th>
+                    <th style={{ padding: '0.5rem' }}>DURATION (MS)</th>
+                    <th style={{ padding: '0.5rem' }}>TOKENS USED</th>
+                    <th style={{ padding: '0.5rem' }}>ESTIMATED COST (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runStatus.cost_metrics.map((m, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '0.5rem', color: 'var(--accent-cyan)' }}>{m.stage}</td>
+                      <td style={{ padding: '0.5rem' }}>{m.execution_time_ms} ms</td>
+                      <td style={{ padding: '0.5rem' }}>{m.tokens_used}</td>
+                      <td style={{ padding: '0.5rem', color: 'var(--accent-emerald)' }}>${m.estimated_cost_usd?.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

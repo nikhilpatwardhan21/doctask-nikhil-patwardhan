@@ -173,23 +173,85 @@ async def get_run_status(thread_id: str):
     )
 
 
-@router.get("/vector-search", response_model=Dict[str, Any])
-async def search_vector_embeddings(query: str = Query(..., description="Semantic search query text"), top_k: int = 3):
+@router.get("/runs/{thread_id}/export", response_model=Dict[str, Any])
+async def export_deliverable_report(thread_id: str):
     """
-    Exposes direct pgvector cosine similarity search (<=>) over stored document embeddings.
+    Generates a grounded deliverable compliance register report summarizing
+    approved changes, rejected findings, exact citations, and cost analytics.
     """
-    try:
-        try:
-            from app.core.vector_store import search_similar_claims
-        except ModuleNotFoundError:
-            from backend.app.core.vector_store import search_similar_claims
-            
-        results = await search_similar_claims(query_text=query, top_k=top_k)
-        return {
-            "query": query,
-            "total_matches": len(results),
-            "results": results
+    checkpointer = get_checkpointer()
+    graph = build_document_workflow(checkpointer=checkpointer)
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    state = await graph.aget_state(config)
+    if not state or not state.values:
+        raise HTTPException(status_code=404, detail="Thread ID not found.")
+        
+    val = state.values
+    approved = val.get("approved_items", [])
+    rejected = val.get("rejected_items", [])
+    cost_metrics = val.get("cost_metrics", [])
+    
+    # Format Grounded Deliverable Report as Markdown
+    md_lines = [
+        f"# Grounded Compliance Register Report: {thread_id}",
+        f"**Pipeline Status**: {'COMPLETED' if val.get('pipeline_completed') else 'PAUSED_AT_GATE'}",
+        f"**Generated At**: {val.get('current_stage')} stage",
+        "",
+        "## Executive Summary",
+        f"- **Extracted Document Facts**: {len(val.get('extracted_facts', []))}",
+        f"- **Rule Findings Generated**: {len(val.get('rule_findings', []))}",
+        f"- **Approved Amendments**: {len(approved)}",
+        f"- **Dismissed Findings**: {len(rejected)}",
+        "",
+        "## Approved Document Amendments (Grounded & Cited)",
+    ]
+    
+    if approved:
+        for idx, item in enumerate(approved):
+            md_lines.extend([
+                f"### {idx + 1}. {item.get('item_type', 'RULE_VIOLATION')} (ID: {item.get('id')})",
+                f"- **Finding**: {item.get('description')}",
+                f"- **Proposed Action**: {item.get('proposed_action')}",
+                f"- **Source Citation**: `{item.get('source_citation', 'Page 1')}`",
+                f"- **Reviewer Notes**: {item.get('reviewer_notes', 'Approved by Human Operator')}",
+                ""
+            ])
+    else:
+        md_lines.append("_No approved amendments committed yet._\n")
+        
+    md_lines.extend([
+        "## Dismissed Rule Findings",
+    ])
+    if rejected:
+        for idx, item in enumerate(rejected):
+            md_lines.extend([
+                f"- **{item.get('id')}**: {item.get('description')} (Citation: `{item.get('source_citation')}`)",
+                f"  - _Reason_: {item.get('reviewer_notes', 'Dismissed during human review')}"
+            ])
+    else:
+        md_lines.append("_No findings dismissed._\n")
+        
+    md_lines.extend([
+        "",
+        "## Execution Cost & Latency Metrics",
+        "| Stage | Execution Duration (ms) | Tokens Used | Estimated Cost (USD) |",
+        "| :--- | :--- | :--- | :--- |"
+    ])
+    
+    for metric in cost_metrics:
+        md_lines.append(
+            f"| {metric.get('stage')} | {metric.get('execution_time_ms')} ms | {metric.get('tokens_used')} | ${metric.get('estimated_cost_usd'):.4f} |"
+        )
+        
+    report_content = "\n".join(md_lines)
+    return {
+        "thread_id": thread_id,
+        "filename": f"Deliverable_Report_{thread_id}.md",
+        "report_markdown": report_content,
+        "summary": {
+            "approved_count": len(approved),
+            "rejected_count": len(rejected),
+            "completed": val.get("pipeline_completed", False)
         }
-    except Exception as e:
-        logger.exception("Error executing pgvector similarity search.")
-        raise HTTPException(status_code=500, detail=str(e))
+    }
