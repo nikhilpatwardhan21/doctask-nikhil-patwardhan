@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
-const DEFAULT_DOCUMENTS = [
+const SAMPLE_DOCUMENTS = [
   {
     id: 'doc-001',
     filename: 'Vendor_Contract_Amendment_v2.pdf',
@@ -28,8 +28,8 @@ export default function ReviewDashboard() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Document Ingestion state
-  const [documents, setDocuments] = useState(DEFAULT_DOCUMENTS);
+  // Document Ingestion queue starts empty by default
+  const [documents, setDocuments] = useState([]);
   const [newFilename, setNewFilename] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newDepartment, setNewDepartment] = useState('Legal');
@@ -76,7 +76,7 @@ export default function ReviewDashboard() {
       reader.onload = (event) => {
         let raw = event.target.result || '';
         let cleanedContent = raw;
-        if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || raw.startsWith('%PDF-')) {
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || raw.startswith('%PDF-')) {
           cleanedContent = `Document excerpt from ${file.name}: Compliance requirements, technical specifications, and system architecture details.`;
         }
         const docObj = {
@@ -117,7 +117,7 @@ export default function ReviewDashboard() {
   // Trigger ingestion workflow with user documents
   const handleIngest = async () => {
     if (documents.length === 0) {
-      setMessage('Please add or upload at least 1 document before running the pipeline.');
+      setMessage('Please upload or add at least 1 document before running the pipeline.');
       return;
     }
 
@@ -153,15 +153,51 @@ export default function ReviewDashboard() {
     }));
   };
 
-  // Submit approvals to resume LangGraph state machine
+  // Single Item Direct Trigger: Approves/Rejects & Commits immediately
+  const handleInstantSingleSubmit = async (approvalId, singleDecision) => {
+    setLoading(true);
+    setMessage(`Submitting decision (${singleDecision}) for ${approvalId}...`);
+    
+    const formattedDecisions = pendingApprovals.map(item => {
+      const isTarget = item.id === approvalId;
+      const decisionVal = isTarget ? singleDecision : (decisions[item.id] || 'APPROVED');
+      return {
+        approval_id: item.id,
+        decision: decisionVal,
+        reviewer_notes: `Reviewed via Instant ${decisionVal} on ${new Date().toLocaleTimeString()}`
+      };
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thread_id: threadId,
+          decisions: formattedDecisions
+        })
+      });
+      
+      const data = await res.json();
+      setMessage(`Pipeline Resumed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
+      setPendingApprovals([]);
+      await fetchStatus();
+    } catch (err) {
+      setMessage(`Error submitting approval: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Submit all approvals to resume LangGraph state machine
   const handleSubmitApprovals = async () => {
     setLoading(true);
-    setMessage('Submitting human review decisions to LangGraph state machine...');
+    setMessage('Submitting all review decisions to LangGraph state machine...');
     
     const formattedDecisions = pendingApprovals.map(item => ({
       approval_id: item.id,
       decision: decisions[item.id] || 'APPROVED',
-      reviewer_notes: `Reviewed by Human Operator on ${new Date().toLocaleTimeString()}`
+      reviewer_notes: `Batch reviewed by Human Operator on ${new Date().toLocaleTimeString()}`
     }));
 
     try {
@@ -175,7 +211,7 @@ export default function ReviewDashboard() {
       });
       
       const data = await res.json();
-      setMessage(`Workflow complete! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
+      setMessage(`Pipeline Completed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
       setPendingApprovals([]);
       await fetchStatus();
     } catch (err) {
@@ -233,19 +269,22 @@ export default function ReviewDashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div>
             <h2 style={{ fontSize: '1.2rem', color: '#fff' }}>📄 Document Ingestion Queue ({documents.length})</h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Upload files or enter custom document excerpts to run through the compliance pipeline.</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Upload your PDF/text files or click "Add Custom Text" to queue documents.</p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <label className="btn btn-reject" style={{ cursor: 'pointer', display: 'inline-block' }}>
+            <label className="btn btn-approve" style={{ cursor: 'pointer', display: 'inline-block' }}>
               📁 Upload File (.txt, .pdf, .md)
               <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
             </label>
             <button className="btn btn-reject" onClick={() => setShowAddDocForm(!showAddDocForm)}>
               {showAddDocForm ? 'Close Form' : '✏️ Add Custom Text'}
             </button>
-            {documents.length === 0 && (
-              <button className="btn btn-reject" onClick={() => setDocuments(DEFAULT_DOCUMENTS)}>
-                🔄 Reset Samples
+            <button className="btn btn-reject" onClick={() => setDocuments(SAMPLE_DOCUMENTS)}>
+              ➕ Load Sample Contracts
+            </button>
+            {documents.length > 0 && (
+              <button className="btn btn-reject" onClick={() => setDocuments([])} style={{ color: 'var(--accent-rose)' }}>
+                🗑️ Clear Queue
               </button>
             )}
           </div>
@@ -290,12 +329,12 @@ export default function ReviewDashboard() {
 
         {/* Queued Documents List */}
         {documents.length === 0 ? (
-          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            No documents queued. Upload a file or click "Reset Samples" to load sample contract documents.
+          <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px dashed var(--border-color)', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Queue is currently empty. Click <strong>📁 Upload File</strong> to upload your own PDF/text documents, or click <strong>➕ Load Sample Contracts</strong>.
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {documents.map((doc, idx) => (
+            {documents.map((doc) => (
               <div key={doc.id} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.85rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <span style={{ fontWeight: '600', color: 'var(--accent-cyan)', fontSize: '0.9rem' }}>
@@ -328,13 +367,13 @@ export default function ReviewDashboard() {
 
       {/* Action Buttons Bar */}
       <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <button className="btn btn-approve" onClick={handleIngest} disabled={loading || documents.length === 0}>
+        <button className="btn btn-approve" onClick={handleIngest} disabled={loading || documents.length === 0} style={{ padding: '0.75rem 1.5rem', fontSize: '1rem' }}>
           {loading ? 'Processing Pipeline...' : `▶ Run Pipeline on ${documents.length} Document(s)`}
         </button>
         <button className="btn btn-reject" onClick={fetchStatus}>
           🔄 Refresh Pipeline State
         </button>
-        {message && <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem' }}>{message}</span>}
+        {message && <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: '500' }}>{message}</span>}
       </div>
 
       {/* Human Approval Cards */}
@@ -342,7 +381,7 @@ export default function ReviewDashboard() {
       {pendingApprovals.length === 0 ? (
         <div className="empty-state">
           <p>No items currently pending approval for thread <code>{threadId}</code>.</p>
-          <p style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>Click "Run Pipeline" above to process queued documents through the state machine.</p>
+          <p style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>Upload a document above and click "Run Pipeline" to process documents through the state machine.</p>
         </div>
       ) : (
         <div className="card-grid">
@@ -362,29 +401,52 @@ export default function ReviewDashboard() {
                     Source Citation: {item.source_citation || 'Document Excerpt, Section 1'}
                   </div>
                 </div>
-                <div className="card-actions">
-                  <button
-                    className={`btn ${currentDecision === 'REJECTED' ? 'btn-reject' : ''}`}
-                    style={currentDecision === 'REJECTED' ? { border: '2px solid var(--accent-rose)' } : { opacity: 0.6 }}
-                    onClick={() => handleDecisionChange(item.id, 'REJECTED')}
-                  >
-                    Reject Item
-                  </button>
-                  <button
-                    className={`btn ${currentDecision === 'APPROVED' ? 'btn-approve' : ''}`}
-                    style={currentDecision === 'APPROVED' ? { boxShadow: '0 0 10px rgba(16,185,129,0.5)' } : { opacity: 0.6 }}
-                    onClick={() => handleDecisionChange(item.id, 'APPROVED')}
-                  >
-                    Approve Item
-                  </button>
+
+                {/* Individual Item Actions */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="btn btn-reject"
+                      style={{ opacity: currentDecision === 'REJECTED' ? 1 : 0.6, fontSize: '0.8rem' }}
+                      onClick={() => handleDecisionChange(item.id, 'REJECTED')}
+                    >
+                      {currentDecision === 'REJECTED' ? '✓ Selected Reject' : 'Select Reject'}
+                    </button>
+                    <button
+                      className="btn btn-approve"
+                      style={{ opacity: currentDecision === 'APPROVED' ? 1 : 0.6, fontSize: '0.8rem' }}
+                      onClick={() => handleDecisionChange(item.id, 'APPROVED')}
+                    >
+                      {currentDecision === 'APPROVED' ? '✓ Selected Approve' : 'Select Approve'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="btn btn-reject"
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                      onClick={() => handleInstantSingleSubmit(item.id, 'REJECTED')}
+                      disabled={loading}
+                    >
+                      ⚡ Instant Reject & Resume
+                    </button>
+                    <button
+                      className="btn btn-approve"
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                      onClick={() => handleInstantSingleSubmit(item.id, 'APPROVED')}
+                      disabled={loading}
+                    >
+                      ⚡ Instant Approve & Resume
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
 
           <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn btn-approve" onClick={handleSubmitApprovals} disabled={loading}>
-              Commit Decisions ({pendingApprovals.length} items)
+            <button className="btn btn-approve" onClick={handleSubmitApprovals} disabled={loading} style={{ padding: '0.85rem 1.75rem', fontSize: '1rem', background: 'linear-gradient(135deg, #10b981, #00f2fe)' }}>
+              🚀 Commit All Decisions ({pendingApprovals.length} items) & Finish Execution
             </button>
           </div>
         </div>
