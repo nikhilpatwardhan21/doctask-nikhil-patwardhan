@@ -1,18 +1,13 @@
-import logging
+import io
+import re
 import time
+import logging
 from typing import Dict, Any, List
+from pypdf import PdfReader
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt
 
 try:
-    from app.agents.state import (
-        DocumentPipelineState,
-        ExtractedFact,
-        RuleFinding,
-        HumanApprovalItem,
-        CostMetric,
-    )
-except ModuleNotFoundError:
     from backend.app.agents.state import (
         DocumentPipelineState,
         ExtractedFact,
@@ -20,20 +15,21 @@ except ModuleNotFoundError:
         HumanApprovalItem,
         CostMetric,
     )
-
-try:
-    from app.core.pdf_parser import extract_pdf_pages_and_text
-    from app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
-except ModuleNotFoundError:
     from backend.app.core.pdf_parser import extract_pdf_pages_and_text
     from backend.app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
+except ModuleNotFoundError:
+    from app.agents.state import (
+        DocumentPipelineState,
+        ExtractedFact,
+        RuleFinding,
+        HumanApprovalItem,
+        CostMetric,
+    )
+    from app.core.pdf_parser import extract_pdf_pages_and_text
+    from app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
 
 logger = logging.getLogger(__name__)
 
-
-import io
-import re
-from pypdf import PdfReader
 
 def clean_document_text(content: str) -> str:
     """Strips raw binary PDF stream markers (%PDF-1.4, /Producer, etc.) and extracts clean text."""
