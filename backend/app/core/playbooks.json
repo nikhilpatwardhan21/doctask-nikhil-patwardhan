@@ -1,0 +1,63 @@
+{
+  "playbooks": [
+    {
+      "id": "legal_nda_v1",
+      "name": "Legal NDA & Vendor Contract Playbook",
+      "description": "Standard legal compliance checks for liability limits, payment terms, and sub-processor clauses.",
+      "rules": [
+        {
+          "rule_id": "RULE-401",
+          "name": "Payment Term Discrepancy",
+          "keywords": ["payment", "net 30", "net 60", "invoice", "terms"],
+          "severity": "WARNING",
+          "action_required": "Confirm extended payment terms with Finance team.",
+          "original_template": "Payment terms set to standard Net 30 days.",
+          "proposed_template": "Payment terms extended to Net 60 days per vendor request."
+        },
+        {
+          "rule_id": "RULE-402",
+          "name": "Third-Party Sub-processor Addition",
+          "keywords": ["third-party", "sub-processor", "data sharing", "vendor"],
+          "severity": "HIGH_RISK",
+          "action_required": "Verify data processing addendum (DPA) and security audit.",
+          "original_template": "Data processing limited exclusively to primary contracting party.",
+          "proposed_template": "Data processing permission expanded to include third-party sub-processors."
+        },
+        {
+          "rule_id": "RULE-403",
+          "name": "Limitation of Liability Cap",
+          "keywords": ["liability", "indemnity", "damages", "cap"],
+          "severity": "CRITICAL",
+          "action_required": "Escalate liability cap change to Legal Counsel.",
+          "original_template": "Liability capped at 12 months total contract value.",
+          "proposed_template": "Liability cap modified to 1x annual contract value."
+        }
+      ]
+    },
+    {
+      "id": "engineering_security_v1",
+      "name": "Engineering & Security Compliance Playbook",
+      "description": "Checks project status reports for schedule delays, API deprecations, and audit findings.",
+      "rules": [
+        {
+          "rule_id": "SEC-101",
+          "name": "Milestone Schedule Slippage",
+          "keywords": ["delay", "milestone", "weeks", "schedule", "lag"],
+          "severity": "WARNING",
+          "action_required": "Review updated project roadmap with Engineering Lead.",
+          "original_template": "Milestone delivery scheduled for original target date.",
+          "proposed_template": "Milestone delivery delayed by 2 weeks due to compliance audit."
+        },
+        {
+          "rule_id": "SEC-102",
+          "name": "API Integration Compliance",
+          "keywords": ["api", "integration", "oauth", "endpoint", "deprecated"],
+          "severity": "HIGH_RISK",
+          "action_required": "Ensure backward compatibility and API rate limiting.",
+          "original_template": "API integration using legacy v1 endpoints.",
+          "proposed_template": "API integration upgraded to OAuth 2.0 and REST v2 endpoints."
+        }
+      ]
+    }
+  ]
+}

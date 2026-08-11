@@ -27,6 +27,7 @@ export default function ReviewDashboard() {
   const [runStatus, setRunStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedPlaybook, setSelectedPlaybook] = useState('legal_nda_v1');
 
   // Document Ingestion queue starts empty by default
   const [documents, setDocuments] = useState([]);
@@ -122,7 +123,7 @@ export default function ReviewDashboard() {
     }
 
     setLoading(true);
-    setMessage('Ingesting documents and running compliance rule engine...');
+    setMessage('⚡ Executing ingestion & pgvector compliance engine...');
     try {
       const payload = {
         thread_id: threadId,
@@ -136,11 +137,11 @@ export default function ReviewDashboard() {
       });
       
       const data = await res.json();
-      setMessage(`Documents ingested! Workflow reached Human Review Gate (Status: ${data.status})`);
+      setMessage(`✓ Documents ingested! Paused at Human Review Gate (Status: ${data.status})`);
       await fetchPendingReviews();
       await fetchStatus();
     } catch (err) {
-      setMessage(`Error starting ingestion: ${err.message}`);
+      setMessage(`✖ Error starting ingestion: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -156,7 +157,7 @@ export default function ReviewDashboard() {
   // Single Item Direct Trigger: Approves/Rejects & Commits immediately
   const handleInstantSingleSubmit = async (approvalId, singleDecision) => {
     setLoading(true);
-    setMessage(`Submitting decision (${singleDecision}) for ${approvalId}...`);
+    setMessage(`⚡ Submitting decision (${singleDecision}) for ${approvalId}...`);
     
     const formattedDecisions = pendingApprovals.map(item => {
       const isTarget = item.id === approvalId;
@@ -179,11 +180,11 @@ export default function ReviewDashboard() {
       });
       
       const data = await res.json();
-      setMessage(`Pipeline Resumed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
+      setMessage(`✓ Pipeline Resumed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
       setPendingApprovals([]);
       await fetchStatus();
     } catch (err) {
-      setMessage(`Error submitting approval: ${err.message}`);
+      setMessage(`✖ Error submitting approval: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -192,7 +193,7 @@ export default function ReviewDashboard() {
   // Submit all approvals to resume LangGraph state machine
   const handleSubmitApprovals = async () => {
     setLoading(true);
-    setMessage('Submitting all review decisions to LangGraph state machine...');
+    setMessage('⚡ Submitting all review decisions to LangGraph state machine...');
     
     const formattedDecisions = pendingApprovals.map(item => ({
       approval_id: item.id,
@@ -211,11 +212,11 @@ export default function ReviewDashboard() {
       });
       
       const data = await res.json();
-      setMessage(`Pipeline Completed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
+      setMessage(`✓ Pipeline Completed! Approved: ${data.approved_count}, Rejected: ${data.rejected_count}`);
       setPendingApprovals([]);
       await fetchStatus();
     } catch (err) {
-      setMessage(`Error submitting approvals: ${err.message}`);
+      setMessage(`✖ Error submitting approvals: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -236,7 +237,7 @@ export default function ReviewDashboard() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        setMessage(`Successfully downloaded grounded deliverable report: ${data.filename}`);
+        setMessage(`✓ Downloaded grounded deliverable report: ${data.filename}`);
       } else {
         setMessage('Could not generate report for current thread.');
       }
@@ -249,87 +250,104 @@ export default function ReviewDashboard() {
 
   return (
     <div className="container">
+      {/* Sleek Navigation Bar */}
       <header>
         <div className="logo-title">
-          <span className="logo-badge">SuperDocs HITL</span>
+          <span className="logo-badge">DOCTASK HITL</span>
           <h1>Agentic Document Gate</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Thread ID:</span>
-          <input
-            type="text"
-            value={threadId}
-            onChange={(e) => setThreadId(e.target.value)}
-            style={{
-              background: 'rgba(0,0,0,0.5)',
-              border: '1px solid var(--border-color)',
-              color: '#fff',
-              padding: '0.5rem 1rem',
-              borderRadius: '8px',
-              fontFamily: 'var(--font-mono)'
-            }}
-          />
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div className="thread-input-box">
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PLAYBOOK:</span>
+            <select
+              value={selectedPlaybook}
+              onChange={(e) => setSelectedPlaybook(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', fontFamily: 'var(--font-sans)', outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="legal_nda_v1" style={{ background: '#0f172a' }}>Legal NDA Playbook</option>
+              <option value="engineering_security_v1" style={{ background: '#0f172a' }}>Engineering & Security Playbook</option>
+            </select>
+          </div>
+
+          <div className="thread-input-box">
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>THREAD_ID:</span>
+            <input
+              type="text"
+              value={threadId}
+              onChange={(e) => setThreadId(e.target.value)}
+            />
+          </div>
         </div>
       </header>
 
-      {/* Visible Stage Tracker */}
+      {/* Visual Flowchart Stage Tracker */}
       <div className="stage-tracker">
         {stages.map((s, idx) => {
           const isCurrent = stage === s;
           const isCompleted = runStatus?.pipeline_completed || stages.indexOf(stage) > idx;
           return (
             <div key={s} className={`stage-pill ${isCurrent ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}>
-              <span className="stage-name">{idx + 1}. {s}</span>
-              <span className="stage-status">
-                {isCurrent ? '● IN PROGRESS' : isCompleted ? '✓ COMPLETED' : 'IDLE'}
-              </span>
+              <div className="stage-header-row">
+                <span className="stage-name">{idx + 1}. {s}</span>
+                <span className={`stage-badge ${isCurrent ? 'in-progress' : isCompleted ? 'completed' : 'idle'}`}>
+                  {isCurrent ? '● IN PROGRESS' : isCompleted ? '✓ DONE' : '⏱ IDLE'}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '0.25rem' }}>
+                {s === 'ingest_documents' && 'pypdf text & citation parsing'}
+                {s === 'examine_rules' && 'pgvector cosine similarity'}
+                {s === 'await_human_review' && 'LangGraph interrupt gate'}
+                {s === 'commit_updates' && 'State register commit'}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* Document Ingestion & Upload Section */}
-      <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--border-color)', marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      {/* Document Ingestion & Queue Panel */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.2rem', color: '#fff' }}>📄 Document Ingestion Queue ({documents.length})</h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Upload your PDF/text files or click "Add Custom Text" to queue documents.</p>
+            <h2 style={{ fontSize: '1.25rem', color: '#fff', fontWeight: '700' }}>📄 Document Ingestion Queue ({documents.length})</h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              Upload source PDF documents or add text excerpts to execute through the compliance state machine.
+            </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <label className="btn btn-approve" style={{ cursor: 'pointer', display: 'inline-block' }}>
-              📁 Upload File (.txt, .pdf, .md)
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
+              📁 Upload PDF / TXT File
               <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
             </label>
-            <button className="btn btn-reject" onClick={() => setShowAddDocForm(!showAddDocForm)}>
+            <button className="btn btn-secondary" onClick={() => setShowAddDocForm(!showAddDocForm)}>
               {showAddDocForm ? 'Close Form' : '✏️ Add Custom Text'}
             </button>
-            <button className="btn btn-reject" onClick={() => setDocuments(SAMPLE_DOCUMENTS)}>
+            <button className="btn btn-secondary" onClick={() => setDocuments(SAMPLE_DOCUMENTS)}>
               ➕ Load Sample Contracts
             </button>
             {documents.length > 0 && (
-              <button className="btn btn-reject" onClick={() => setDocuments([])} style={{ color: 'var(--accent-rose)' }}>
+              <button className="btn btn-reject" onClick={() => setDocuments([])}>
                 🗑️ Clear Queue
               </button>
             )}
           </div>
         </div>
 
-        {/* Add Manual Form */}
+        {/* Add Manual Text Form */}
         {showAddDocForm && (
-          <form onSubmit={handleAddManualDocument} style={{ background: 'rgba(0,0,0,0.4)', padding: '1rem', borderRadius: '12px', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
+          <form onSubmit={handleAddManualDocument} style={{ background: 'rgba(0,0,0,0.4)', padding: '1.25rem', borderRadius: '16px', marginBottom: '1.25rem', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem' }}>
               <input
                 type="text"
-                placeholder="Document Filename (e.g., NDA_Agreement_v3.pdf)"
+                placeholder="Document Filename (e.g., Service_Level_Agreement.pdf)"
                 value={newFilename}
                 onChange={(e) => setNewFilename(e.target.value)}
-                style={{ flex: 2, background: '#0f172a', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem', borderRadius: '6px' }}
+                style={{ flex: 2, background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.65rem 1rem', borderRadius: '10px', fontFamily: 'var(--font-sans)', outline: 'none' }}
                 required
               />
               <select
                 value={newDepartment}
                 onChange={(e) => setNewDepartment(e.target.value)}
-                style={{ flex: 1, background: '#0f172a', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem', borderRadius: '6px' }}
+                style={{ flex: 1, background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.65rem 1rem', borderRadius: '10px', fontFamily: 'var(--font-sans)', outline: 'none' }}
               >
                 <option value="Legal">Department: Legal</option>
                 <option value="Engineering">Department: Engineering</option>
@@ -342,45 +360,45 @@ export default function ReviewDashboard() {
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               rows={3}
-              style={{ width: '100%', background: '#0f172a', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem', borderRadius: '6px', fontFamily: 'var(--font-sans)', marginBottom: '0.75rem' }}
+              style={{ width: '100%', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.65rem 1rem', borderRadius: '10px', fontFamily: 'var(--font-sans)', marginBottom: '0.75rem', outline: 'none' }}
               required
             />
-            <button type="submit" className="btn btn-approve" style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
+            <button type="submit" className="btn btn-approve" style={{ fontSize: '0.85rem' }}>
               + Add Document to Queue
             </button>
           </form>
         )}
 
-        {/* Queued Documents List */}
+        {/* Queued Document Cards Grid */}
         {documents.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px dashed var(--border-color)', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Queue is currently empty. Click <strong>📁 Upload File</strong> to upload your own PDF/text documents, or click <strong>➕ Load Sample Contracts</strong>.
+          <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(0,0,0,0.25)', borderRadius: '16px', border: '1px dashed var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            Queue is currently empty. Click <strong>📁 Upload PDF / TXT File</strong> to process your own documents, or click <strong>➕ Load Sample Contracts</strong>.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
             {documents.map((doc) => (
-              <div key={doc.id} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.85rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '600', color: 'var(--accent-cyan)', fontSize: '0.9rem' }}>
+              <div key={doc.id} className="doc-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                  <span style={{ fontWeight: '700', color: 'var(--accent-cyan)', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     📄 {doc.filename}
                   </span>
                   <button
                     onClick={() => handleRemoveDocument(doc.id)}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', fontSize: '0.9rem' }}
                     title="Remove Document"
                   >
                     ✖
                   </button>
                 </div>
-                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.4', marginBottom: '0.5rem', height: '2.8em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: '0.825rem', color: '#cbd5e1', lineHeight: '1.45', marginBottom: '0.75rem', height: '2.9em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   "{doc.content}"
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <span style={{ background: 'rgba(255,255,255,0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                    {doc.metadata?.department || 'General'}
+                <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  <span style={{ background: 'rgba(255,255,255,0.08)', padding: '0.2rem 0.5rem', borderRadius: '6px' }}>
+                    DEPT: {doc.metadata?.department || 'General'}
                   </span>
-                  <span style={{ background: 'rgba(255,255,255,0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                    {doc.content.length} chars
+                  <span style={{ background: 'rgba(255,255,255,0.08)', padding: '0.2rem 0.5rem', borderRadius: '6px' }}>
+                    SIZE: {doc.content.length} chars
                   </span>
                 </div>
               </div>
@@ -389,28 +407,28 @@ export default function ReviewDashboard() {
         )}
       </div>
 
-      {/* Action Buttons Bar */}
-      <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <button className="btn btn-approve" onClick={handleIngest} disabled={loading || documents.length === 0} style={{ padding: '0.75rem 1.5rem', fontSize: '1rem' }}>
-          {loading ? 'Processing Pipeline...' : `▶ Run Pipeline on ${documents.length} Document(s)`}
+      {/* Action Control Bar */}
+      <div style={{ marginBottom: '2.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <button className="btn btn-primary" onClick={handleIngest} disabled={loading || documents.length === 0} style={{ padding: '0.85rem 1.75rem', fontSize: '1rem' }}>
+          {loading ? '⚡ Processing Pipeline...' : `▶ Run Compliance Pipeline on ${documents.length} Document(s)`}
         </button>
-        <button className="btn btn-reject" onClick={fetchStatus}>
-          🔄 Refresh Pipeline State
+        <button className="btn btn-secondary" onClick={fetchStatus}>
+          🔄 Refresh State
         </button>
         {runStatus && (
-          <button className="btn btn-approve" onClick={handleExportDeliverable} style={{ background: 'linear-gradient(135deg, #7f00ff, #00f2fe)' }}>
-            📥 Download Grounded Report (.md)
+          <button className="btn btn-approve" onClick={handleExportDeliverable} style={{ background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-cyan))' }}>
+            📥 Download Grounded Deliverable (.md)
           </button>
         )}
-        {message && <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: '500' }}>{message}</span>}
+        {message && <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: '600', fontFamily: 'var(--font-mono)' }}>{message}</span>}
       </div>
 
-      {/* Human Approval Cards */}
-      <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Pending Human Approvals</h2>
+      {/* Human Approval Gate Panel */}
+      <h2 style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '1.25rem', color: '#fff' }}>Pending Human Approvals (HITL Gate)</h2>
       {pendingApprovals.length === 0 ? (
         <div className="empty-state">
-          <p>No items currently pending approval for thread <code>{threadId}</code>.</p>
-          <p style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>Upload a document above and click "Run Pipeline" to process documents through the state machine.</p>
+          <p style={{ fontSize: '1.05rem', fontWeight: '600', color: '#fff', marginBottom: '0.4rem' }}>No items currently pending approval for thread <code>{threadId}</code>.</p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Upload a document above and click "Run Compliance Pipeline" to pause execution at the Human Review Gate.</p>
         </div>
       ) : (
         <div className="card-grid">
@@ -418,21 +436,37 @@ export default function ReviewDashboard() {
             const currentDecision = decisions[item.id] || 'APPROVED';
             return (
               <div key={item.id} className="review-card">
-                <div className="card-header">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span className="card-tag">{item.item_type}</span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: {item.id}</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>ITEM_ID: {item.id}</span>
                 </div>
-                <div className="card-body">
-                  <strong>Finding:</strong> {item.description}
+                
+                <div style={{ fontSize: '0.95rem', lineHeight: '1.6', color: '#e2e8f0' }}>
+                  <strong style={{ color: '#fff' }}>Finding:</strong> {item.description}
                   <br />
-                  <strong>Proposed Action:</strong> {item.proposed_action}
-                  <div className="citation-box">
-                    Source Citation: {item.source_citation || 'Document Excerpt, Section 1'}
-                  </div>
+                  <strong style={{ color: '#fff' }}>Proposed Action:</strong> {item.proposed_action}
                 </div>
 
-                {/* Individual Item Actions */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                {/* Visual Text Diff Block */}
+                {(item.original_text || item.proposed_text) && (
+                  <div style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Visual Wording Diff</div>
+                    <div style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fca5a5', padding: '0.4rem 0.75rem', borderRadius: '6px', marginBottom: '0.4rem', borderLeft: '3px solid var(--accent-rose)' }}>
+                      - {item.original_text || 'Original wording'}
+                    </div>
+                    <div style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', padding: '0.4rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid var(--accent-emerald)' }}>
+                      + {item.proposed_text || 'Proposed amendment wording'}
+                    </div>
+                  </div>
+                )}
+
+                <div className="citation-box">
+                  <span>📌 Source Citation:</span>
+                  <strong>{item.source_citation || 'Document Excerpt, Page 1'}</strong>
+                </div>
+
+                {/* Instant Item Trigger Actions */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.85rem', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       className="btn btn-reject"
@@ -450,10 +484,10 @@ export default function ReviewDashboard() {
                     </button>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', gap: '0.6rem' }}>
                     <button
                       className="btn btn-reject"
-                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                      style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
                       onClick={() => handleInstantSingleSubmit(item.id, 'REJECTED')}
                       disabled={loading}
                     >
@@ -461,7 +495,7 @@ export default function ReviewDashboard() {
                     </button>
                     <button
                       className="btn btn-approve"
-                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                      style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
                       onClick={() => handleInstantSingleSubmit(item.id, 'APPROVED')}
                       disabled={loading}
                     >
@@ -474,8 +508,8 @@ export default function ReviewDashboard() {
           })}
 
           <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn btn-approve" onClick={handleSubmitApprovals} disabled={loading} style={{ padding: '0.85rem 1.75rem', fontSize: '1rem', background: 'linear-gradient(135deg, #10b981, #00f2fe)' }}>
-              🚀 Commit All Decisions ({pendingApprovals.length} items) & Finish Execution
+            <button className="btn btn-approve" onClick={handleSubmitApprovals} disabled={loading} style={{ padding: '0.95rem 2rem', fontSize: '1.05rem', background: 'linear-gradient(135deg, #10b981, #38bdf8)' }}>
+              🚀 Commit All Decisions ({pendingApprovals.length} items) & Resume Pipeline Execution
             </button>
           </div>
         </div>
@@ -483,53 +517,53 @@ export default function ReviewDashboard() {
 
       {/* Stage Execution History & Cost Analytics */}
       {runStatus && (
-        <div style={{ marginTop: '3rem', background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ fontSize: '1.1rem', color: '#fff' }}>📊 Stage Execution History & Cost Analytics (Behavior #10)</h3>
-            <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)' }}>
-              Pipeline Status: {runStatus.pipeline_completed ? '✓ COMPLETED' : '● PAUSED'}
+        <div className="glass-panel" style={{ marginTop: '3.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#fff' }}>📊 Stage Execution History & Cost Analytics (Behavior #10)</h3>
+            <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', background: 'rgba(56, 189, 248, 0.12)', padding: '0.3rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+              STATUS: {runStatus.pipeline_completed ? '✓ COMPLETED' : '● PAUSED AT GATE'}
             </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>EXTRACTED FACTS</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>{runStatus.extracted_facts_count}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2rem' }}>
+            <div style={{ background: 'rgba(0,0,0,0.35)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>EXTRACTED FACTS</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-cyan)', marginTop: '0.2rem' }}>{runStatus.extracted_facts_count}</div>
             </div>
-            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RULE FINDINGS</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-rose)' }}>{runStatus.rule_findings_count}</div>
+            <div style={{ background: 'rgba(0,0,0,0.35)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>RULE FINDINGS</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-rose)', marginTop: '0.2rem' }}>{runStatus.rule_findings_count}</div>
             </div>
-            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>APPROVED ITEMS</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-emerald)' }}>{runStatus.approved_count}</div>
+            <div style={{ background: 'rgba(0,0,0,0.35)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>APPROVED ITEMS</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-emerald)', marginTop: '0.2rem' }}>{runStatus.approved_count}</div>
             </div>
-            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>DISMISSED ITEMS</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#94a3b8' }}>{runStatus.rejected_count}</div>
+            <div style={{ background: 'rgba(0,0,0,0.35)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>DISMISSED ITEMS</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: '#94a3b8', marginTop: '0.2rem' }}>{runStatus.rejected_count}</div>
             </div>
           </div>
 
           {/* Stage Cost Breakdown Table */}
           {runStatus.cost_metrics && runStatus.cost_metrics.length > 0 && (
             <div>
-              <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: '#cbd5e1' }}>Stage Breakdown (Latency & Tokens)</h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '1rem', color: '#e2e8f0' }}>Stage Breakdown (Execution Time & Token Usage)</h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '0.5rem' }}>STAGE</th>
-                    <th style={{ padding: '0.5rem' }}>DURATION (MS)</th>
-                    <th style={{ padding: '0.5rem' }}>TOKENS USED</th>
-                    <th style={{ padding: '0.5rem' }}>ESTIMATED COST (USD)</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>STAGE NAME</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>EXECUTION DURATION</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>TOKENS USED</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>ESTIMATED COST (USD)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {runStatus.cost_metrics.map((m, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--accent-cyan)' }}>{m.stage}</td>
-                      <td style={{ padding: '0.5rem' }}>{m.execution_time_ms} ms</td>
-                      <td style={{ padding: '0.5rem' }}>{m.tokens_used}</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--accent-emerald)' }}>${m.estimated_cost_usd?.toFixed(4)}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--accent-cyan)', fontWeight: '600' }}>{m.stage}</td>
+                      <td style={{ padding: '0.75rem 1rem' }}>{m.execution_time_ms} ms</td>
+                      <td style={{ padding: '0.75rem 1rem' }}>{m.tokens_used}</td>
+                      <td style={{ padding: '0.75rem 1rem', color: 'var(--accent-emerald)', fontWeight: '600' }}>${m.estimated_cost_usd?.toFixed(4)}</td>
                     </tr>
                   ))}
                 </tbody>

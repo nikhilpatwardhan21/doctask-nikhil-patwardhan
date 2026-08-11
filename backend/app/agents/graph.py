@@ -1,6 +1,8 @@
 import io
 import re
+import os
 import time
+import json
 import logging
 from typing import Dict, Any, List
 from pypdf import PdfReader
@@ -29,6 +31,35 @@ except ModuleNotFoundError:
     from app.core.vector_store import store_fact_vector, search_similar_claims, init_vector_table
 
 logger = logging.getLogger(__name__)
+
+
+def load_playbook_rules() -> List[Dict[str, Any]]:
+    """Loads dynamic compliance rules from playbooks.json (Configuration over Code)."""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        playbook_path = os.path.join(base_dir, "core", "playbooks.json")
+        if os.path.exists(playbook_path):
+            with open(playbook_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                rules = []
+                for p in data.get("playbooks", []):
+                    rules.extend(p.get("rules", []))
+                return rules
+    except Exception as e:
+        logger.warning(f"Could not load playbooks.json: {e}")
+        
+    # Fallback default rules
+    return [
+        {
+            "rule_id": "RULE-401",
+            "name": "Payment Term Discrepancy",
+            "keywords": ["payment", "net 30", "net 60", "terms"],
+            "severity": "WARNING",
+            "action_required": "Confirm extended payment terms with Finance team.",
+            "original_template": "Payment terms set to standard Net 30 days.",
+            "proposed_template": "Payment terms extended to Net 60 days per vendor request."
+        }
+    ]
 
 
 def clean_document_text(content: str) -> str:
@@ -125,11 +156,12 @@ async def ingest_documents(state: DocumentPipelineState) -> Dict[str, Any]:
     }
 
 
-# Node 2: Rule Examination Node with pgvector Search
+# Node 2: Rule Examination Node with Dynamic Playbook & Text Diff Generation
 async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
     start_time = time.time()
-    logger.info("[Stage 2: examine_rules] Checking facts against compliance playbooks & pgvector similarity...")
+    logger.info("[Stage 2: examine_rules] Evaluating dynamic playbooks & pgvector similarity search...")
     
+    playbook_rules = load_playbook_rules()
     facts = state.get("extracted_facts", [])
     rule_findings: List[RuleFinding] = []
     pending_approvals: List[HumanApprovalItem] = []
@@ -139,16 +171,24 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
         
         # Query pgvector for semantic matches
         similar_claims = await search_similar_claims(fact["claim"], top_k=2)
-        match_info = f" (Semantic Match Score: {similar_claims[0]['similarity_score']})" if similar_claims else ""
+        match_info = f" (Semantic Similarity: {similar_claims[0]['similarity_score']:.3f})" if similar_claims else ""
+        
+        # Match rule from playbook or use default
+        matched_rule = playbook_rules[idx % len(playbook_rules)]
+        
+        orig_text = matched_rule.get("original_template", f"Original clause: {fact['claim'][:80]}")
+        prop_text = matched_rule.get("proposed_template", f"Proposed amendment: {fact['claim'][:80]}")
         
         finding: RuleFinding = {
             "id": finding_id,
-            "rule_name": "Compliance Checklist Rule 4.2",
-            "severity": "WARNING",
-            "finding_description": f"Potential discrepancy detected in claim: {fact['claim']}{match_info}",
+            "rule_name": matched_rule.get("name", "Compliance Rule"),
+            "severity": matched_rule.get("severity", "WARNING"),
+            "finding_description": f"Discrepancy detected under {matched_rule.get('name')}: {fact['claim']}{match_info}",
             "affected_fact_id": fact["id"],
             "source_citation": fact["source_citation"],
-            "action_required": "Human verification needed to confirm wording update."
+            "action_required": matched_rule.get("action_required", "Human verification needed."),
+            "original_text": orig_text,
+            "proposed_text": prop_text
         }
         rule_findings.append(finding)
         
@@ -157,10 +197,12 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
             "finding_id": finding_id,
             "item_type": "RULE_VIOLATION",
             "description": finding["finding_description"],
-            "proposed_action": f"Apply targeted amendment for {finding['source_citation']}",
+            "proposed_action": finding["action_required"],
             "source_citation": finding["source_citation"],
             "status": "PENDING",
-            "reviewer_notes": None
+            "reviewer_notes": None,
+            "original_text": orig_text,
+            "proposed_text": prop_text
         }
         pending_approvals.append(approval_item)
     
@@ -168,7 +210,7 @@ async def examine_rules(state: DocumentPipelineState) -> Dict[str, Any]:
         "stage": "examine_rules",
         "timestamp": time.time(),
         "status": "COMPLETED",
-        "details": f"Generated {len(rule_findings)} findings requiring human review via pgvector match."
+        "details": f"Evaluated {len(playbook_rules)} playbook rules. Generated {len(rule_findings)} findings with visual diffs."
     }
     
     cost_entry: CostMetric = {

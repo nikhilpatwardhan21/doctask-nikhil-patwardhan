@@ -26,6 +26,8 @@ class RuleFinding(TypedDict):
     affected_fact_id: Optional[str]
     source_citation: str
     action_required: str
+    original_text: Optional[str]
+    proposed_text: Optional[str]
 
 
 class HumanApprovalItem(TypedDict):
@@ -37,6 +39,8 @@ class HumanApprovalItem(TypedDict):
     source_citation: Optional[str]
     status: str  # "PENDING", "APPROVED", "REJECTED"
     reviewer_notes: Optional[str]
+    original_text: Optional[str]
+    proposed_text: Optional[str]
 
 
 class CostMetric(TypedDict):
