@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     
     PROJECT_NAME: str = "Agentic Document Processing System"
     VERSION: str = "1.0.0"
+    API_KEY: str = os.getenv("API_KEY", "superdocs_secret_key_2026")
+    ALLOWED_ORIGINS: list = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173"
+    ]
     
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
@@ -30,3 +37,4 @@ class Settings(BaseSettings):
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 settings = Settings()
+

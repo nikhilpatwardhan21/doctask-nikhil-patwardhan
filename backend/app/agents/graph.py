@@ -80,7 +80,7 @@ def clean_document_text(content: str) -> str:
             if extracted_pages:
                 full_text = " ".join(" ".join(extracted_pages).split())
                 if len(full_text) > 20:
-                    return full_text[:250]
+                    return full_text[:5000]
         except Exception as e:
             logger.debug(f"pypdf extraction fallback: {e}")
 
@@ -88,9 +88,10 @@ def clean_document_text(content: str) -> str:
         words = re.findall(r'\b[A-Za-z0-9_\-\.\,\:\s]{6,80}\b', content)
         clean_words = [w.strip() for w in words if not any(kw in w for kw in ['obj', 'endobj', 'Type', 'Pages', 'Catalog', 'Producer', 'Kids', 'Font', 'Encoding'])]
         if clean_words:
-            return " ".join(clean_words[:5])[:250]
+            return " ".join(clean_words[:25])[:1000]
         return "Parsed PDF Document Specifications & Requirements text"
-    return content[:250]
+    return content[:5000]
+
 
 
 # Node 1: Document Ingestion Node

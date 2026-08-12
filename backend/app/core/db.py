@@ -61,9 +61,13 @@ async def init_db_and_checkpointer():
             logger.info("LangGraph AsyncPostgresSaver checkpointer successfully initialized.")
             return checkpointer
         except Exception as e:
-            logger.warning(f"Could not connect to PostgreSQL ({e}). Using in-memory checkpointer fallback.")
+            logger.error(f"CRITICAL: Failed to connect to PostgreSQL checkpointer ({e}).")
+            if os.getenv("STRICT_POSTGRES", "false").lower() in ("true", "1"):
+                raise RuntimeError(f"PostgreSQL Checkpointer Failure: {e}")
+            logger.warning(f"Using in-memory checkpointer fallback.")
             checkpointer = fallback_memory_checkpointer
             return checkpointer
+
     else:
         logger.info("Postgres checkpointer bypassed (USE_POSTGRES=false). Using in-memory checkpointer.")
         checkpointer = fallback_memory_checkpointer

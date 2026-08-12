@@ -1,8 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, Header, Depends
+from typing import List, Dict, Any, Optional
 
 try:
+    from app.core.config import settings
     from app.schemas.documents import (
         IngestDocumentRequest,
         BatchApprovalRequest,
@@ -12,6 +13,7 @@ try:
     from app.agents.graph import build_document_workflow
     from app.core.db import get_checkpointer
 except ModuleNotFoundError:
+    from backend.app.core.config import settings
     from backend.app.schemas.documents import (
         IngestDocumentRequest,
         BatchApprovalRequest,
@@ -22,7 +24,14 @@ except ModuleNotFoundError:
     from backend.app.core.db import get_checkpointer
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    """Verifies client API Key for security (P0.1)."""
+    if x_api_key and x_api_key != settings.API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API Key provided.")
+    return True
+
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/ingest", response_model=Dict[str, Any])
@@ -106,20 +115,26 @@ async def submit_approvals(payload: BatchApprovalRequest):
     if not pending:
         return {"status": "NO_PENDING_APPROVALS", "thread_id": payload.thread_id}
 
-    # Partition decisions into approved and rejected sets
+    # Partition decisions into approved and rejected sets with explicit handling (P0.2)
     approved_list = []
     rejected_list = []
     decision_map = {d.approval_id: d for d in payload.decisions}
     
     for item in pending:
         decision_info = decision_map.get(item["id"])
-        if decision_info and decision_info.decision.upper() == "APPROVED":
-            item["status"] = "APPROVED"
-            item["reviewer_notes"] = decision_info.reviewer_notes
-            approved_list.append(item)
+        if decision_info:
+            if decision_info.decision.upper() == "APPROVED":
+                item["status"] = "APPROVED"
+                item["reviewer_notes"] = decision_info.reviewer_notes or "Explicitly approved"
+                approved_list.append(item)
+            else:
+                item["status"] = "REJECTED"
+                item["reviewer_notes"] = decision_info.reviewer_notes or "Explicitly rejected"
+                rejected_list.append(item)
         else:
+            # Default un-submitted items to explicit rejection with clear note
             item["status"] = "REJECTED"
-            item["reviewer_notes"] = decision_info.reviewer_notes if decision_info else "Rejected by default"
+            item["reviewer_notes"] = "Dismissed by batch reviewer (No decision specified)"
             rejected_list.append(item)
 
     # Resume graph by passing review decisions into graph stream Command / interrupt resume
@@ -127,6 +142,7 @@ async def submit_approvals(payload: BatchApprovalRequest):
         "approved_items": approved_list,
         "rejected_items": rejected_list
     }
+
     
     try:
         from langgraph.types import Command
@@ -255,3 +271,22 @@ async def export_deliverable_report(thread_id: str):
             "completed": val.get("pipeline_completed", False)
         }
     }
+
+
+@router.get("/vector-search", response_model=Dict[str, Any])
+async def vector_search_endpoint(query: str = Query(..., description="Semantic search query"), top_k: int = Query(3, ge=1, le=10)):
+    """
+    Queries PostgreSQL pgvector doc_embeddings table using 384-dim cosine distance (<=>).
+    """
+    try:
+        from app.core.vector_store import search_similar_claims
+    except ModuleNotFoundError:
+        from backend.app.core.vector_store import search_similar_claims
+
+    results = await search_similar_claims(query, top_k=top_k)
+    return {
+        "query": query,
+        "top_k": top_k,
+        "results": results
+    }
+

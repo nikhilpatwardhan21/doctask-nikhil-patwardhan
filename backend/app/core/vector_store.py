@@ -60,10 +60,13 @@ async def init_vector_table():
                     source_citation TEXT NOT NULL,
                     embedding vector({EMBEDDING_DIM})
                 );
+                CREATE INDEX IF NOT EXISTS doc_embeddings_hnsw_idx 
+                ON doc_embeddings USING hnsw (embedding vector_cosine_ops);
             """)
-            logger.info("pgvector doc_embeddings table ready.")
+            logger.info("pgvector doc_embeddings table and HNSW index ready.")
     except Exception as e:
         logger.warning(f"Could not initialize pgvector table ({e}).")
+
 
 
 async def store_fact_vector(doc_id: str, claim_text: str, source_citation: str):

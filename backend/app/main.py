@@ -50,14 +50,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for React Frontend
+# Enable CORS for React Frontend with configured origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Register REST API routes for React Frontend
 app.include_router(api_router, prefix="/api/v1")
