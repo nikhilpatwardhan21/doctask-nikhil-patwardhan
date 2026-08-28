@@ -1,53 +1,99 @@
-# Agentic Document Processing System
+# DocTask - Autonomous Agentic Document Intelligence Platform
 
-An enterprise-grade, resilient agentic document-processing system built with **Python (FastAPI)**, **LangGraph**, **PostgreSQL (`pgvector`)**, **Model Context Protocol (MCP)**, and a **React Human-in-the-Loop (HITL)** review dashboard.
+**Candidate**: Nikhil Patwardhan  
+**Repository**: `doctask-nikhil-patwardhan`  
+**Round 2 Tasks Completed**: Task 1 (Core Agentic HITL System), Task 2 (Repository ADR Agent), Task 4 (Submission Documentation)  
 
 ---
 
-## 🌟 Core System Behaviors & Architecture
+## 🌟 Core System Overview
+
+**DocTask** is an enterprise-grade, state-resilient agentic document intelligence platform built with **Python (FastAPI)**, **LangGraph**, **PostgreSQL (`pgvector`)**, **Model Context Protocol (MCP)**, and a **React Human-in-the-Loop (HITL)** review dashboard.
+
+It solves **"The Analyst That Never Sleeps"** problem (Task 1): Organizations run on piles of related documents (vendor contracts, project status reports, clinical paperwork, resumes, engineering specifications) that describe the same reality but frequently disagree.
+
+DocTask ingests mixed-format document piles (`.pdf`, `.txt`, `.json`), extracts grounded facts with page-level citations (`Filename.pdf, Page N`), evaluates compliance playbooks in visible stages, pauses at a **Human-in-the-Loop Review Gatekeeper**, and exports a grounded compliance register report where every claim traces to exact source citations.
+
+---
+
+## 📌 Compliance Matrix: The 10 Behaviors
 
 | Behavior | Architecture & Implementation | Status |
 | :--- | :--- | :---: |
-| **1. Visible Stages** | 4-stage State Machine (`ingest_documents` → `examine_rules` → `await_human_review` → `commit_updates`). Every step transition is tracked in execution state. | ✅ |
-| **2. Survives Being Stopped** | State checkpointing via LangGraph `AsyncPostgresSaver` backed by PostgreSQL + `pgvector`. A process killed mid-run resumes cleanly upon restart. | ✅ |
-| **3. Human Holds Gate** | Human-in-the-Loop approval gate allowing item-by-item approval or rejection before committing updates. | ✅ |
-| **4. Machine Driver (MCP)** | Dual interface: FastMCP server tools (`trigger_document_pipeline`, `list_pending_reviews`, `submit_approval_decision`) allow external AI agents to drive the workflow. | ✅ |
-| **5. Grounded Citations** | Zero bluffing. Every extracted fact and rule finding traces directly to exact page citations (`Filename.pdf, Page N`). | ✅ |
-| **6. One-Command Setup** | Full containerized database setup via `docker compose up -d`. | ✅ |
-| **7. Proves Itself** | Complete `pytest` integration test suite running 100% offline without requiring paid model API keys. | ✅ |
-| **8. Injection Defense** | Adversarial instructions inside source documents are treated as plain text data to report on, never executed as commands. | ✅ |
-| **9. Concurrent Safety** | Thread isolation (`thread_id`) prevents state corruption across simultaneous pipeline executions. | ✅ |
-| **10. Cost & Latency Analytics** | Real-time stage analytics recording duration (ms), token consumption, and estimated cost (USD) per stage. | ✅ |
+| **1. Visible Stages** | 4-stage State Machine (`ingest_documents` → `examine_rules` → `await_human_review` → `commit_updates`). Every step transition is tracked in execution state. | ✅ PASS |
+| **2. Survives Being Stopped** | State checkpointing via LangGraph `AsyncPostgresSaver` backed by PostgreSQL + `pgvector` on Port `:5433`. A process killed mid-run resumes cleanly upon restart. | ✅ PASS |
+| **3. Human Holds Gate** | Human-in-the-Loop approval gate allowing item-by-item approval or rejection before committing updates. Clean 2-option interface (`✖ Reject` / `✓ Approve`). | ✅ PASS |
+| **4. Machine Driver (MCP)** | Dual interface: FastMCP server tools (`trigger_pipeline`, `submit_approval`, `export_report`) allow external AI agents to drive the workflow. | ✅ PASS |
+| **5. Grounded Citations** | Zero bluffing. Every extracted fact and rule finding traces directly to exact page citations (`Filename.pdf, Page N`). | ✅ PASS |
+| **6. One-Command Setup** | Full containerized database setup via `docker compose up -d`. | ✅ PASS |
+| **7. Proves Itself** | Complete `pytest` integration test suite running 100% offline without requiring paid model API keys. | ✅ PASS |
+| **8. Injection Defense** | Adversarial instructions inside source documents are treated as plain text data to report on, never executed as commands. | ✅ PASS |
+| **9. Concurrent Safety** | Thread isolation (`thread_id`) prevents state corruption across simultaneous pipeline executions. | ✅ PASS |
+| **10. Cost & Latency Analytics** | Real-time stage analytics recording duration (ms), token consumption, and estimated cost (USD) per stage. | ✅ PASS |
+
+---
+
+## 🤖 Task 2: Assigned Build — Repository ADR Agent
+
+Located in `builds/repo_decision_agent/adr_agent.py`, DocTask includes a dedicated agent that watches git commit activity, filters architectural decisions from noise, and maintains a continuous Architectural Decision Record (`DECISIONS.md`).
+
+### Features:
+- **Noise Filtering**: Distinguishes durable architectural decisions from routine commits.
+- **Status Lifecycle**: Marks previous records as `SUPERSEDED` when new architectural decisions override older records.
+- **Continuous Digest**: Generates a weekly digest summary of repository architectural movements.
+- **Dry-Run Mode**: Evaluates commits without mutating records (`python builds/repo_decision_agent/adr_agent.py --dry-run`).
 
 ---
 
 ## 🏗️ System Architecture
 
-```
-                                ┌───────────────────────────┐
-                                │ React HITL Review UI      │
-                                │ (Port 3000)               │
-                                └─────────────┬─────────────┘
-                                              │ HTTP REST
-                                              ▼
-┌──────────────────────────┐    ┌───────────────────────────┐
-│ External Coding Agent    │───►│ FastAPI Backend Server    │
-│ (Cursor / MCP Client)    │    │ (Port 8000 / main.py)     │
-└──────────────────────────┘    └─────────────┬─────────────┘
-          │ MCP Protocol                      │
-          └───────────────────────────────────┼────────────────┐
-                                              │                │
-                                              ▼                ▼
-                                 ┌──────────────────┐  ┌──────────────┐
-                                 │ LangGraph Engine │  │ MCP Server   │
-                                 └────────┬─────────┘  └──────────────┘
-                                          │
-                                          ▼
-                                ┌───────────────────────────┐
-                                │ Docker PostgreSQL 16      │
-                                │ - AsyncPostgresSaver      │
-                                │ - pgvector Extension      │
-                                └───────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph ClientLayer ["Client & Interface Layer"]
+        UI["React 18 Control Tower Deck\n(Port 3000 / Vite / Space Grotesk)"]
+        MCP_Client["MCP Client / External AI Agent\n(Claude Code / Cursor)"]
+        CLI["CLI Command / Automated Runner"]
+    end
+
+    subgraph APILayer ["FastAPI REST & FastMCP Protocol Layer"]
+        API["FastAPI App\n(Port 8000 / main.py)"]
+        MCP_Server["FastMCP Server\n(mcp_server/server.py)"]
+        Auth["X-API-Key Security Middleware"]
+    end
+
+    subgraph AgentLayer ["LangGraph State Machine Engine (Task 1)"]
+        Ingest["Stage 1: ingest_documents\n(pypdf / Base64 / Fact Extraction)"]
+        Examine["Stage 2: examine_rules\n(Dynamic Playbooks & Wording Diffs)"]
+        Gate["Stage 3: await_human_review\n[Native interrupt() HITL Gate]"]
+        Commit["Stage 4: commit_updates\n(Grounded Deliverable Register)"]
+
+        Ingest --> Examine --> Gate --> Commit
+    end
+
+    subgraph DBLayer ["PostgreSQL Database Infrastructure (Port 5433)"]
+        Checkpointer[("AsyncPostgresSaver\nCheckpointer State Persistence\n(Behavior #2: Crash Resilience)")]
+        VectorStore[("pgvector Extension\n384-Dim HNSW Index\n(doc_embeddings table)")]
+    end
+
+    subgraph Task2Layer ["Repository ADR Agent (Task 2)"]
+        GitWatcher["Git Commit / Merged PR Monitor\n(builds/repo_decision_agent/adr_agent.py)"]
+        ADR_Doc[("DECISIONS.md\nContinuous Decision Record")]
+        GitWatcher --> ADR_Doc
+    end
+
+    %% Connections
+    UI -->|HTTP / X-API-Key| Auth
+    MCP_Client -->|MCP Tools Protocol| MCP_Server
+    CLI -->|Pytest / Direct Calls| API
+
+    Auth --> API
+    MCP_Server --> API
+
+    API -->|astream / aget_state| Ingest
+    Gate -->|Human Approve / Reject| Commit
+
+    AgentLayer <-->|State Checkpoints| Checkpointer
+    AgentLayer <-->|Vector Cosine Search <=>| VectorStore
 ```
 
 ---
@@ -57,7 +103,7 @@ An enterprise-grade, resilient agentic document-processing system built with **P
 ### Prerequisites
 - **Python 3.10+**
 - **Node.js 18+**
-- **Docker Desktop** *(Optional - for PostgreSQL `pgvector` persistence)*
+- **Docker Desktop** *(for PostgreSQL `pgvector` container)*
 
 ### 1. Database Setup (Docker Compose)
 Start the PostgreSQL container with `pgvector` enabled:
@@ -121,17 +167,16 @@ backend/venv/Scripts/python.exe -m pytest backend/tests/test_pipeline.py -v
 - `GET /api/v1/vector-search`: Perform direct cosine similarity search (`<=>`) over PostgreSQL `pgvector` store.
 
 ### Model Context Protocol (MCP) Tools
-- `trigger_document_pipeline(thread_id, raw_documents_json)`: Programmatically starts graph execution.
-- `list_pending_reviews(thread_id)`: Exposes items awaiting approval at the human gate.
-- `submit_approval_decision(thread_id, decisions_json)`: Drives approval gate programmatically via MCP tool calls.
+- `trigger_pipeline(thread_id, documents)`: Programmatically starts graph execution.
+- `submit_approval(thread_id, decisions)`: Drives approval gate programmatically via MCP tool calls.
+- `export_report(thread_id)`: Exports grounded deliverable report via MCP.
 
 ---
 
-## 📐 Architectural Trade-offs & Design Choices
+## 📄 Task 4 Submission Deliverable Artifacts
 
-1. **LangGraph State Machine vs Fixed Scripts**:  
-   *Trade-off*: Adds structural overhead, but guarantees deterministic state transitions, native `interrupt` gates, and multi-actor resumption.
-2. **PostgreSQL (`pgvector`) vs SQLite**:  
-   *Trade-off*: Requires containerized infrastructure (Docker), but provides production-ready vector similarity search (`<=>`) and scalable ACID state checkpointing.
-3. **Dual REST + MCP Surface**:  
-   *Trade-off*: Requires dual route maintenance, but enables both human operators (via React UI) and automated coding agents (via MCP) to drive the approval gate.
+- **[`SUBMISSION_WRITEUP.md`](file:///c:/Users/NIKHIL/OneDrive/Desktop/SuperDocs/SUBMISSION_WRITEUP.md)**: One-page technical write-up, quantitative results, and trade-off analysis.
+- **[`ARCHITECTURE_DIAGRAM.md`](file:///c:/Users/NIKHIL/OneDrive/Desktop/SuperDocs/ARCHITECTURE_DIAGRAM.md)**: Complete system architecture diagram and component breakdown.
+- **[`DEMO_VIDEO_SCRIPT.md`](file:///c:/Users/NIKHIL/OneDrive/Desktop/SuperDocs/DEMO_VIDEO_SCRIPT.md)**: 3-minute video walkthrough narration script.
+- **[`DECISIONS.md`](file:///c:/Users/NIKHIL/OneDrive/Desktop/SuperDocs/DECISIONS.md)**: Repository Architectural Decision Records maintained by Task 2 agent.
+- **[`Deliverable_Report_Sample.md`](file:///c:/Users/NIKHIL/OneDrive/Desktop/SuperDocs/Deliverable_Report_Sample.md)**: Sample grounded compliance register report generated by Task 1.
