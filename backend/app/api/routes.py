@@ -1,6 +1,9 @@
+import os
+import json
 import logging
 from fastapi import APIRouter, HTTPException, Query, Header, Depends
 from typing import List, Dict, Any, Optional
+
 
 try:
     from app.core.config import settings
@@ -289,4 +292,6 @@ async def vector_search_endpoint(query: str = Query(..., description="Semantic s
         "top_k": top_k,
         "results": results
     }
+
+
 

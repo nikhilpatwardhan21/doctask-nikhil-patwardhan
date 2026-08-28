@@ -8,7 +8,8 @@
         {
           "rule_id": "RULE-401",
           "name": "Payment Term Discrepancy",
-          "keywords": ["payment", "net 30", "net 60", "invoice", "terms"],
+          "keywords": ["payment terms", "net 30", "net 60", "invoice payment", "payment schedule"],
+
           "severity": "WARNING",
           "action_required": "Confirm extended payment terms with Finance team.",
           "original_template": "Payment terms set to standard Net 30 days.",
